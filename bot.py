@@ -74,7 +74,7 @@ async def auto_index():
     print(f"✨ Auto indexing finished up to message ID: {new_last_id}")
 
 def schedule_index():
-    scheduler.add_job(auto_index, "cron", hour=22, minute=0)  # 10 PM IST
+    scheduler.add_job(auto_index, "interval", minutes=2)  # 10 PM IST
     scheduler.start()
     print("⏱️ Auto Index Scheduler Started (10PM IST)")
 # -------------------------------------- #
