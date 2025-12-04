@@ -5,6 +5,8 @@ from pathlib import Path
 from pyrogram import idle
 import logging
 import logging.config
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from pytz import timezone
 
 # Get logging configurations
 logging.config.fileConfig("logging.conf")
@@ -38,6 +40,42 @@ from Jisshu.bot.clients import initialize_clients
 ppath = "plugins/*.py"
 files = glob.glob(ppath)
 JisshuBot.start()
+schedule_index()
+IST = timezone("Asia/Kolkata")
+scheduler = AsyncIOScheduler(timezone=IST)
+
+DB_CHANNEL = int(os.environ.get("DB_CHANNEL", ""))
+
+# Save & load last indexed message ID (replace with your DB logic)
+async def get_last_id():
+    data = await db.col.find_one({"_id": "LAST_INDEX_ID"})
+    return data.get("msg_id", 0) if data else 0
+
+async def save_last_id(msg_id: int):
+    await db.col.update_one(
+        {"_id": "LAST_INDEX_ID"},
+        {"$set": {"msg_id": msg_id}},
+        upsert=True
+    )
+
+async def auto_index():
+    print("🔍 Auto indexing started...")
+    last_id = await get_last_id()
+    new_last_id = last_id
+
+    async for msg in JisshuBot.get_chat_history(DB_CHANNEL, offset_id=last_id, reverse=True):
+        if msg.document or msg.video or msg.audio:
+            await index_files(msg)  # <-- function already exists in your plugins
+            new_last_id = msg.id
+
+    await save_last_id(new_last_id)
+    print(f"✨ Auto indexing finished up to message ID: {new_last_id}")
+
+def schedule_index():
+    scheduler.add_job(auto_index, "cron", hour=22, minute=0)  # 10 PM IST
+    scheduler.start()
+    print("⏱️ Scheduler started for 10 PM IST indexing!")
+
 loop = asyncio.get_event_loop()
 
 pyrogram.utils.MIN_CHANNEL_ID = -1009147483647
