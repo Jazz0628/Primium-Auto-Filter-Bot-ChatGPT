@@ -78,7 +78,8 @@ async def auto_nightly_index():
         logger.error(f"Failed to send end log: {e}")
 
 # Schedule the job to run every day at 22:00 (10 PM) IST
-scheduler.add_job(auto_nightly_index, "cron", hour=22, minute=0)
+# New line (2:00 PM IST)
+scheduler.add_job(auto_nightly_index, "cron", hour=14, minute=0)
 
 # Start the scheduler
 scheduler.start()
