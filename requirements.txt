@@ -47,6 +47,10 @@ apscheduler
 pyromod 
 colorama
 
+APScheduler
+pytz
+
 telegraph 
+
 
 
