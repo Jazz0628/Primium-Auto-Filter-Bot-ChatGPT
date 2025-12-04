@@ -5,10 +5,20 @@ from pathlib import Path
 from pyrogram import idle
 import logging
 import logging.config
+import os
+import asyncio
+from datetime import date, datetime
+import pytz
+from aiohttp import web
+
+# Scheduler imports
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from pytz import timezone
 
-# Get logging configurations
+# Index function import
+from plugins.pm_filter import index_files
+
+# Logging config
 logging.config.fileConfig("logging.conf")
 logging.getLogger().setLevel(logging.INFO)
 logging.getLogger("pyrogram").setLevel(logging.ERROR)
@@ -27,26 +37,18 @@ from database.users_chats_db import db
 from info import *
 from utils import temp
 from Script import script
-from datetime import date, datetime
-import pytz
-from aiohttp import web
 from plugins import web_server, check_expired_premium
-import pyrogram.utils
-import asyncio
 from Jisshu.bot import JisshuBot
 from Jisshu.util.keepalive import ping_server
 from Jisshu.bot.clients import initialize_clients
 
-ppath = "plugins/*.py"
-files = glob.glob(ppath)
-JisshuBot.start()
-schedule_index()
+
+# -------- AUTO INDEX SCHEDULER -------- #
 IST = timezone("Asia/Kolkata")
 scheduler = AsyncIOScheduler(timezone=IST)
 
 DB_CHANNEL = int(os.environ.get("DB_CHANNEL", ""))
 
-# Save & load last indexed message ID (replace with your DB logic)
 async def get_last_id():
     data = await db.col.find_one({"_id": "LAST_INDEX_ID"})
     return data.get("msg_id", 0) if data else 0
@@ -65,7 +67,7 @@ async def auto_index():
 
     async for msg in JisshuBot.get_chat_history(DB_CHANNEL, offset_id=last_id, reverse=True):
         if msg.document or msg.video or msg.audio:
-            await index_files(msg)  # <-- function already exists in your plugins
+            await index_files(msg)
             new_last_id = msg.id
 
     await save_last_id(new_last_id)
@@ -74,10 +76,14 @@ async def auto_index():
 def schedule_index():
     scheduler.add_job(auto_index, "cron", hour=22, minute=0)  # 10 PM IST
     scheduler.start()
-    print("⏱️ Scheduler started for 10 PM IST indexing!")
+    print("⏱️ Auto Index Scheduler Started (10PM IST)")
+# -------------------------------------- #
+
+
+ppath = "plugins/*.py"
+files = glob.glob(ppath)
 
 loop = asyncio.get_event_loop()
-
 pyrogram.utils.MIN_CHANNEL_ID = -1009147483647
 
 
@@ -87,6 +93,7 @@ async def Jisshu_start():
     bot_info = await JisshuBot.get_me()
     JisshuBot.username = bot_info.username
     await initialize_clients()
+
     for name in files:
         with open(name) as a:
             patt = Path(a.name)
@@ -98,33 +105,41 @@ async def Jisshu_start():
             spec.loader.exec_module(load)
             sys.modules["plugins." + plugin_name] = load
             print("JisshuBot Imported => " + plugin_name)
+    
     if ON_HEROKU:
         asyncio.create_task(ping_server())
+    
     b_users, b_chats = await db.get_banned()
     temp.BANNED_USERS = b_users
     temp.BANNED_CHATS = b_chats
+    
     await Media.ensure_indexes()
     me = await JisshuBot.get_me()
     temp.ME = me.id
     temp.U_NAME = me.username
     temp.B_NAME = me.first_name
     temp.B_LINK = me.mention
+    
     JisshuBot.username = "@" + me.username
     JisshuBot.loop.create_task(check_expired_premium(JisshuBot))
+    
     logging.info(
         f"{me.first_name} with for Pyrogram v{__version__} (Layer {layer}) started on {me.username}."
     )
     logging.info(script.LOGO)
+    
     tz = pytz.timezone("Asia/Kolkata")
     today = date.today()
     now = datetime.now(tz)
     time = now.strftime("%H:%M:%S %p")
+    
     await JisshuBot.send_message(
         chat_id=LOG_CHANNEL, text=script.RESTART_TXT.format(me.mention, today, time)
     )
     await JisshuBot.send_message(
-        chat_id=SUPPORT_GROUP, text=f"<b>{me.mention} ʀᴇsᴛᴀʀᴛᴇᴅ 🤖</b>"
+        chat_id=SUPPORT_GROUP, text=f"<b>{me.mention} restarted 🤖</b>"
     )
+    
     app = web.AppRunner(await web_server())
     await app.setup()
     bind_address = "0.0.0.0"
@@ -135,5 +150,6 @@ async def Jisshu_start():
 if __name__ == "__main__":
     try:
         loop.run_until_complete(Jisshu_start())
+        schedule_index()  # Scheduler starts AFTER bot fully online
     except KeyboardInterrupt:
         logging.info("Service Stopped Bye 👋")
